@@ -174,9 +174,11 @@ def test_flash_mcu_respects_page_and_transfer_limits():
         assert length <= MAX_TRANSFER, f"block of {length} bytes exceeds the limit"
         assert start + length <= PAGE_SIZE, "block crosses a page boundary"
 
-    # Both pages must have been selected.
+    # Both pages must have been selected. The AVR32 page select is five bytes
+    # with the page number in bytes 3 and 4.
     selects = dfu.commands(bytes([0x06, 0x03, 0x01]))
-    pages = {(cmd[4] << 8) | cmd[5] for cmd in selects}
+    assert all(len(cmd) == 5 for cmd in selects), "page select must be 5 bytes"
+    pages = {(cmd[3] << 8) | cmd[4] for cmd in selects}
     assert pages == {0, 1}, f"expected pages 0 and 1, got {pages}"
 
 

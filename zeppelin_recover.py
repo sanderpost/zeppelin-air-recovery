@@ -86,9 +86,11 @@ COPROC_READY_TIMEOUT = 15
 
 # Flash below 0x3900 cannot be verified by readback, for two separate reasons:
 #
-#   0x0000-0x1FFF  The bootloader itself, write protected by the BOOTPROT fuse.
-#                  B&W's hex files do contain code for this range, but writes
-#                  are ignored and reads come back as 0xFF.
+#   0x0000-0x1FFF  The bootloader itself, write protected by the BOOTPROT fuse
+#                  (BOOTPROT reads 0x02 on hardware). The range reads back
+#                  fine, but writes are silently discarded, so it keeps the
+#                  device's own bootloader rather than whatever the hex file
+#                  carries for that range.
 #   0x2000-0x38FF  A second stage bootloader that survives a chip erase. The
 #                  hex files ship zeros here while the device holds real data,
 #                  byte identical before and after an erase.
@@ -299,7 +301,10 @@ class Zeppelin:
         if self._page == page:
             return
         self.select_ena()
-        self._command(bytes([0x06, 0x03, 0x01, 0x00,
+        # Five bytes, not six: the page number occupies bytes 3 and 4. An
+        # extra padding byte here shifts it out of position and the bootloader
+        # silently stays on page 0, which corrupts any image larger than 64 KiB.
+        self._command(bytes([0x06, 0x03, 0x01,
                              (page >> 8) & 0xFF, page & 0xFF]), f"select_page({page})")
         self._page = page
 
@@ -411,8 +416,10 @@ class Zeppelin:
             offset = addr % PAGE_SIZE
             chunk = min(length - len(out), PAGE_SIZE - offset, MAX_TRANSFER)
 
+            # select_page already sends the enable. Sending another one here
+            # would reset the page selection back to 0 and silently return
+            # page 0 for every read.
             self.select_page(page)
-            self.select_ena()
             end = offset + chunk - 1
             self.dfu.download(bytes([0x03, 0x00,
                                      (offset >> 8) & 0xFF, offset & 0xFF,
@@ -614,7 +621,8 @@ def wait_for_device(timeout: int = 300):
 def progress(done: int, total: int, label: str) -> None:
     if total <= 0:
         return
-    if done != total and done % (MAX_TRANSFER // 8) and done % 100:
+    step = max(total // 50, 1)
+    if done != total and done % step:
         return
     pct = done * 100 // total
     print(f"\r{label}: {done}/{total} ({pct}%)", end="", flush=True)

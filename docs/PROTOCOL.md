@@ -59,9 +59,19 @@ unlocks the whole device.
 ## 2. Memory units
 
 ```
-06 03 00 <unit>      select memory unit
-06 03 01 00 <page16> select 64 KiB flash page
+06 03 00 <unit>              select memory unit          (4 bytes)
+06 03 01 <page_hi> <page_lo> select 64 KiB flash page    (5 bytes)
 ```
+
+Note the page select is **five** bytes, with the 16-bit page number in bytes 3
+and 4. An extra padding byte is not ignored: the bootloader accepts the command,
+reports `OK`, and silently stays on page 0. Reads then return page 0 mirrored
+across the whole address space, and writes beyond the first 64 KiB land back in
+page 0 — which corrupts any image larger than 64 KiB while appearing to
+succeed. The MCU firmware spans four pages, so this matters.
+
+The enable must not be re-sent between selecting a page and issuing the data
+command, because it resets the page selection.
 
 | Unit | Contents |
 | --- | --- |
@@ -265,7 +275,7 @@ On the 256 KiB AT32UC3A0256, two ranges cannot be verified by readback:
 
 | Range | Behaviour |
 | --- | --- |
-| `0x0000-0x1FFF` | Bootloader, BOOTPROT write-protected. The hex files contain real code here (starting `e0 8f 40 00`) but writes are ignored and reads return `0xFF`. |
+| `0x0000-0x1FFF` | Bootloader, BOOTPROT write-protected (`BOOTPROT` reads `0x02`). Readable, but writes are silently discarded, so it keeps the device's own bootloader rather than the code the hex files carry for this range. |
 | `0x2000-0x38FF` | Second-stage bootloader that survives a chip erase. The hex files ship zeros; the device holds real data, byte-identical before and after an erase. |
 | `0x3900+` | Normal application flash, verifies exactly. |
 

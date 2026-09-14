@@ -145,11 +145,14 @@ script aborts with a clear message after 60 seconds of no progress rather than
 waiting out the full 300-second timeout.
 
 **Flash below `0x3900` cannot be verified.** `0x0000-0x1FFF` is the bootloader,
-write-protected by the BOOTPROT fuse and read back as `0xFF`. `0x2000-0x38FF`
-holds a second-stage bootloader that survives a chip erase, where the hex files
-ship zeros but the device holds real data. Writes are still issued across this
-range, exactly as the official utility does, but verification skips it. This is
-the same benign mismatch `dfu-programmer` reports as *"5841 invalid bytes"*.
+write-protected by the BOOTPROT fuse, so it keeps the device's own bootloader
+regardless of what the hex file carries there. `0x2000-0x38FF` holds a
+second-stage bootloader that survives a chip erase, where the hex files ship
+zeros but the device holds real data. Writes are still issued across this range,
+exactly as the official utility does, but verification skips it. This is the
+same benign mismatch `dfu-programmer` reports as *"5841 invalid bytes"*.
+Everything from `0x3900` up verifies exactly — 214,644 bytes, zero mismatches,
+measured against hardware.
 
 **Audio output is unverified.** The firmware recovery itself is confirmed: all
 6687 coprocessor blocks accepted, MCU flash verified byte-exact by readback, and
@@ -158,9 +161,22 @@ The speaker this was developed against was never confirmed to produce sound, so
 that last link in the chain is untested. If it works for you, please say so in
 an issue.
 
-**`ISP_FORCE` may remain set.** On the development unit, `setfuse ISP_FORCE 0`
-reported success but read back unchanged, so the speaker needed its Standby
-button held to power on. Harmless, but worth knowing.
+**The fuses cannot be changed, and you should not try.** Measured on hardware:
+
+```
+ISP_FORCE 0x01   ISP_IO_COND_EN 0x01   BOOTPROT 0x02
+LOCK 0xffff      EPFL 0x00             BODEN 0x03    ISP_BOD_EN 0x01
+```
+
+`dfu-programmer setfuse` exits successfully but writes nothing here, presumably
+blocked by `BOOTPROT`/`LOCK`. That is a good thing: `ISP_FORCE` polarity is not
+documented clearly enough to guess at, and getting it wrong could force the
+bootloader permanently. This tool deliberately provides no fuse writing.
+
+With `ISP_IO_COND_EN` enabled the bootloader samples a button at startup, so
+holding Standby while applying mains power is what enters the bootloader. If
+your speaker keeps coming up white, power it on **without touching any
+button**.
 
 ## Testing
 
