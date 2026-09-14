@@ -237,6 +237,14 @@ def test_wait_for_coproc_accepts_boot_sequence():
         time_module.sleep = original
 
 
+def test_bring_up_coproc_skips_init_when_already_ready():
+    # A second init on a ready coprocessor stalls it until mains power is cut,
+    # so no init command may be sent in this case.
+    dfu = FakeDfu([COPROC_READY])
+    Zeppelin(dfu).bring_up_coproc()
+    assert not dfu.commands(bytes([0x06, 0x09]))
+
+
 def test_wait_for_coproc_rejects_error_state():
     import time as time_module
     original = time_module.sleep

@@ -231,6 +231,18 @@ the last block the updater sleeps 2 seconds, then ends the transfer:
 is `62 43 6f 44` (`bCoD`) with a build date string, but no container parsing is
 needed.
 
+The whole stream has to happen in the same power cycle as the launch, and there
+is no shortcut. Issuing the init and the end-of-transfer without the 6687 blocks
+in between is accepted at the protocol level — every status comes back `0x00` —
+but the application then hangs during startup with a completely dark LED. The
+coprocessor is only left in a state the application can use once the image has
+actually been written, so a launch always has to follow a real flash.
+
+Reads are not available to cross-check any of this: the coprocessor rejects the
+read command with `errVERIFY` (`0x07`) and stalls the upload. The official
+utility never verifies the coprocessor either, so a failed write there is
+silent.
+
 ## 5. Starting the application
 
 ```

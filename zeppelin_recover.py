@@ -465,6 +465,35 @@ class Zeppelin:
                              (startup >> 8) & 0xFF, startup & 0xFF,
                              (ready >> 8) & 0xFF, ready & 0xFF]), "coproc_init")
 
+    def bring_up_coproc(self, attempts: int = 5) -> None:
+        """Get the coprocessor to ready, whatever state it starts in.
+
+        The first init after a power up often fails with a pipe error, and
+        simply retrying clears it. If the coprocessor is already ready the
+        init has to be skipped entirely, because a second one stalls it until
+        mains power is cut.
+        """
+        if self.dfu.get_status().coproc_state == COPROC_READY:
+            print("  coprocessor already ready (skipping init)")
+            return
+
+        for attempt in range(1, attempts + 1):
+            try:
+                self.coproc_init()
+                break
+            except usb.core.USBError as exc:
+                print(f"  init attempt {attempt} failed ({exc}); retrying")
+                try:
+                    self.dfu.clear_status()
+                except usb.core.USBError:
+                    pass
+                time.sleep(2)
+        else:
+            raise RecoveryError(
+                "the coprocessor refused every init attempt; cycle mains power")
+
+        self.wait_for_coproc()
+
     def wait_for_coproc(self, timeout: int = 300) -> None:
         """Poll until the coprocessor reports ready (state 0x12).
 
@@ -771,8 +800,7 @@ def phase2(zep: Zeppelin, firmware: dict[str, str], verify: bool = True) -> None
               f"0x{PROTECTED_REGION[0]:04x}-0x{PROTECTED_REGION[1] - 1:04x} region")
 
     print("\n  initialising the coprocessor (this takes 20-30 seconds)...")
-    zep.coproc_init()
-    zep.wait_for_coproc()
+    zep.bring_up_coproc()
 
     print("\n  programming the coprocessor (several minutes)...")
     zep.flash_coproc(firmware["app_DMP.bcd"])
@@ -836,8 +864,7 @@ def cmd_phase(args: argparse.Namespace) -> int:
 
 def cmd_flash_coproc(args: argparse.Namespace) -> int:
     zep = Zeppelin(open_device(), verbose=args.verbose)
-    zep.coproc_init()
-    zep.wait_for_coproc()
+    zep.bring_up_coproc()
     zep.flash_coproc(args.image)
     print("Coprocessor flash complete.")
     return 0
@@ -848,7 +875,11 @@ def cmd_launch(args: argparse.Namespace) -> int:
     zep.start_application()
     time.sleep(3)
     if usb.core.find(idVendor=VID, idProduct=PID) is None:
-        print("Application started (the device left the bootloader).")
+        # Leaving the bootloader is all this proves. The application may still
+        # hang during startup, which looks like a completely dark LED.
+        print("The device left the bootloader.")
+        print("Check the LED: a red standby glow means the application came up.")
+        print("A dark LED means it jumped but hung during startup.")
     else:
         print("Still in the bootloader; the application did not start.")
     return 0
