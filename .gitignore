@@ -1,0 +1,13 @@
+# B&W firmware is not redistributable. Extract it from your own copy of the
+# official recovery utility with:  ./zeppelin_recover.py extract
+firmware/
+*.hex
+*.bcd
+
+# Flash dumps may contain device specific data
+*.bin
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
